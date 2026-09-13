@@ -596,9 +596,12 @@ function populateMonthPicker() {
   monthSel.value=now.getMonth(); yearSel.value=now.getFullYear();
 }
 function applyMonthPicker() {
-  const m=parseInt(document.getElementById('sel-month').value), yr=parseInt(document.getElementById('sel-month-year').value);
-  customRangeStart=new Date(yr,m,1).toISOString().slice(0,10);
-  customRangeEnd=new Date(yr,m+1,0).toISOString().slice(0,10);
+  const m  = parseInt(document.getElementById('sel-month').value);
+  const yr = parseInt(document.getElementById('sel-month-year').value);
+  const sd = new Date(yr, m, 1);
+  const ed = new Date(yr, m+1, 0);
+  customRangeStart = `${sd.getFullYear()}-${String(sd.getMonth()+1).padStart(2,'0')}-${String(sd.getDate()).padStart(2,'0')}`;
+  customRangeEnd   = `${ed.getFullYear()}-${String(ed.getMonth()+1).padStart(2,'0')}-${String(ed.getDate()).padStart(2,'0')}`;
   renderAnalytics();
 }
 
@@ -620,6 +623,12 @@ function applyCustomDays() {
 
 function getPeriodDates() {
   const now=new Date();
+
+  // Helper — converts a local Date to YYYY-MM-DD without UTC shift
+  function localISO(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
   if (currentPeriod==='weekly'||currentPeriod==='monthly'||currentPeriod==='yearly'||currentPeriod==='custom') {
     const start=customRangeStart, end=customRangeEnd;
     const label = currentPeriod==='custom'
@@ -627,7 +636,10 @@ function getPeriodDates() {
       : ((start&&end) ? `${formatDate(start)} – ${formatDate(end)}` : '—');
     return {start, end, label};
   }
-  const d=new Date(now); d.setDate(d.getDate()+periodOffset); const s=d.toISOString().slice(0,10);
+
+  // Daily — use localISO instead of toISOString to avoid UTC rollback
+  const d=new Date(now); d.setDate(d.getDate()+periodOffset);
+  const s=localISO(d);
   return {start:s, end:s, label:formatDate(s)};
 }
 
@@ -713,23 +725,49 @@ function renderAnalytics() {
 function renderTrendTable(activeCats, curStart) {
   const wrap=document.getElementById('trend-wrap'), titleEl=document.getElementById('trend-title');
   let buckets=[];
-  if (currentPeriod==='daily') {
-    for (let i=6;i>=0;i--) { const d=new Date(curStart+'T00:00:00'); d.setDate(d.getDate()-i); const s=d.toISOString().slice(0,10); buckets.push({label:formatDate(s),start:s,end:s}); }
-    titleEl.textContent='Last 7 Days Trend';
-  } else if (currentPeriod==='weekly') {
-    const base=new Date(curStart+'T00:00:00');
-    for (let i=3;i>=0;i--) { const mon=new Date(base); mon.setDate(base.getDate()-i*7); const sun=new Date(mon); sun.setDate(mon.getDate()+6); buckets.push({label:formatDate(mon.toISOString().slice(0,10)),start:mon.toISOString().slice(0,10),end:sun.toISOString().slice(0,10)}); }
-    titleEl.textContent='4-Week Trend';
-  } else if (currentPeriod==='monthly') {
-    const base=new Date(curStart+'T00:00:00');
-    for (let i=5;i>=0;i--) { const d=new Date(base.getFullYear(),base.getMonth()-i,1); const s=d.toISOString().slice(0,10); const e=new Date(d.getFullYear(),d.getMonth()+1,0).toISOString().slice(0,10); buckets.push({label:d.toLocaleDateString('en-IN',{month:'short',year:'2-digit'}),start:s,end:e}); }
-    titleEl.textContent='6-Month Trend';
-  } else {
-    const baseYr=parseInt((curStart||String(new Date().getFullYear())).slice(0,4));
-    for (let i=3;i>=0;i--) { const yr=baseYr-i; buckets.push({label:String(yr),start:`${yr}-01-01`,end:`${yr}-12-31`}); }
-    titleEl.textContent='4-Year Trend';
+
+  // Helper — converts a local Date to YYYY-MM-DD without UTC shift
+  function localISO(d) {
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
   }
 
+  if (currentPeriod==='daily') {
+    for (let i=6; i>=0; i--) {
+      const d=new Date(curStart+'T00:00:00'); d.setDate(d.getDate()-i);
+      const s=localISO(d);
+      buckets.push({label:formatDate(s), start:s, end:s});
+    }
+    titleEl.textContent='Last 7 Days Trend';
+
+  } else if (currentPeriod==='weekly') {
+    const base=new Date(curStart+'T00:00:00');
+    for (let i=3; i>=0; i--) {
+      const mon=new Date(base); mon.setDate(base.getDate()-i*7);
+      const sun=new Date(mon); sun.setDate(mon.getDate()+6);
+      buckets.push({label:formatDate(localISO(mon)), start:localISO(mon), end:localISO(sun)});
+    }
+    titleEl.textContent='4-Week Trend';
+
+  } else if (currentPeriod==='monthly') {
+    const base=new Date(curStart+'T00:00:00');
+    for (let i=5; i>=0; i--) {
+      const d  = new Date(base.getFullYear(), base.getMonth()-i, 1);
+      const ed = new Date(d.getFullYear(), d.getMonth()+1, 0);
+      const s  = localISO(d);
+      const e  = localISO(ed);
+      buckets.push({label:d.toLocaleDateString('en-IN',{month:'short',year:'2-digit'}), start:s, end:e});
+    }
+    titleEl.textContent='6-Month Trend';
+
+  } else {
+    const baseYr=parseInt((curStart||String(new Date().getFullYear())).slice(0,4));
+    for (let i=3; i>=0; i--) {
+      const yr=baseYr-i;
+      buckets.push({label:String(yr), start:`${yr}-01-01`, end:`${yr}-12-31`});
+    }
+    titleEl.textContent='4-Year Trend';
+  }
+  
   const catNames=getActiveCatNames().filter(n=>activeCats.has(n)), showAll=selCatFilters.has('__ALL__');
   const rows=buckets.map(b => {
     const exps=expenses.filter(e=>e.date>=b.start&&e.date<=b.end&&activeCats.has(e.cat));
